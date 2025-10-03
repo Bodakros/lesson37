@@ -1,4 +1,6 @@
 import io
+import tempfile
+import os
 
 import imageio
 import pyvista
@@ -51,27 +53,96 @@ class Visualizer:
                 print("No images captured")
                 return None
 
+            # Try different approaches for creating MP4
             buffer = io.BytesIO()
 
-            # Use ffmpeg writer for MP4 - this fixes the format issue
-            writer = imageio.get_writer(
-                buffer,
-                format='FFMPEG',
-                fps=30,
-                codec='libx264',
-                quality=7,
-                pixelformat='yuv420p'
-            )
+            try:
+                # Method 1: Try with mp4 format directly
+                writer = imageio.get_writer(
+                    buffer,
+                    format='mp4',
+                    fps=30,
+                    quality=7,
+                    pixelformat='yuv420p'
+                )
 
-            for image in images:
-                writer.append_data(image)
-            writer.close()
+                for image in images:
+                    writer.append_data(image)
+                writer.close()
+
+            except Exception as e1:
+                print(f"Method 1 failed: {e1}")
+                buffer = io.BytesIO()
+
+                try:
+                    # Method 2: Try with ffmpeg-imageio plugin
+                    writer = imageio.get_writer(
+                        buffer,
+                        format='ffmpeg',
+                        fps=30,
+                        codec='libx264',
+                        quality=7,
+                        pixelformat='yuv420p'
+                    )
+
+                    for image in images:
+                        writer.append_data(image)
+                    writer.close()
+
+                except Exception as e2:
+                    print(f"Method 2 failed: {e2}")
+
+                    try:
+                        # Method 3: Create temporary file and read it back
+                        with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_file:
+                            temp_filename = temp_file.name
+
+                        writer = imageio.get_writer(
+                            temp_filename,
+                            fps=30,
+                            quality=7,
+                            pixelformat='yuv420p'
+                        )
+
+                        for image in images:
+                            writer.append_data(image)
+                        writer.close()
+
+                        # Read the file back into buffer
+                        with open(temp_filename, 'rb') as f:
+                            buffer.write(f.read())
+
+                        # Clean up temporary file
+                        os.unlink(temp_filename)
+
+                    except Exception as e3:
+                        print(f"Method 3 failed: {e3}")
+
+                        # Method 4: Fall back to GIF if MP4 fails
+                        try:
+                            buffer = io.BytesIO()
+                            writer = imageio.get_writer(
+                                buffer,
+                                format='gif',
+                                duration=1 / 30,
+                                loop=0
+                            )
+
+                            for image in images:
+                                writer.append_data(image)
+                            writer.close()
+
+                        except Exception as e4:
+                            print(f"All methods failed. Last error: {e4}")
+                            return None
 
             buffer.seek(0)
             return buffer
 
         except Exception as e:
             print(f"Error in gen_gif: {e}")
+            import traceback
+            traceback.print_exc()
             return None
         finally:
             if self.plotter is not None:

@@ -57,12 +57,23 @@ class Logic:
         )
 
         res = handled_model.process()
-        os.makedirs('./Videos', exist_ok=True)
-        with open('./Videos/' + get_bare_filename(file) + '.mp4', 'wb') as f:
-            f.write(res.image.getbuffer())
 
-        handled_model.image.seek(0)
-        return handled_model.image
+        # Check if processing was successful
+        if res is None or res.image is None:
+            dprint.error(f"Failed to process model: {file}")
+            return None
+
+        # Save to file if successful
+        os.makedirs('./Videos', exist_ok=True)
+        try:
+            with open('./Videos/' + get_bare_filename(file) + '.mp4', 'wb') as f:
+                f.write(res.image.getbuffer())
+            dprint.success(f"Video saved: ./Videos/{get_bare_filename(file)}.mp4")
+        except Exception as e:
+            dprint.error(f"Failed to save video: {e}")
+
+        res.image.seek(0)
+        return res.image
 
     @events.register(events.NewMessage(incoming=True))
     async def model_message_handler(self, event: telethon.events.NewMessage.Event):
@@ -87,8 +98,19 @@ class Logic:
 
         file_vis = self.convert(full_file_name)
 
-        await self.client.send_file(who, file=file_vis)
+        # Check if conversion was successful before sending
+        if file_vis is None:
+            await self.client.send_message(who,
+                                           "Sorry, I couldn't process your 3D model file. Please make sure "
+                                           "it's a valid OBJ or STL file.")
+            return
 
+        try:
+            await self.client.send_file(who, file=file_vis)
+            dprint.success(f"Successfully sent visualization to {who}")
+        except Exception as e:
+            dprint.error(f"Failed to send file: {e}")
+            await self.client.send_message(who, "Sorry, there was an error sending the visualization.")
 
 
     @events.register(events.NewMessage(incoming=True, pattern='^/start$'))
